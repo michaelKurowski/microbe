@@ -1,21 +1,31 @@
-
+//Graphics settings
 const renderingInterval = 1000 / 60
-const cellDetailsLevel = 2
-const mouse = {x: 0, y: 0}
-const distanceFromMousePush = 40
-const breathInterval = 5000
+const debugMode = false
+
+//Environment objects
+const bubblesAmount = 160
+const bubbleMinSize = 4
+const bubbleMaxSize = 10
+const diatomsAmount = 4
+const diatomMinSize = 10
+const diatomMaxSize = 50
+
+//Cell
+const cytoplasmaMaxParticlesSize = 3
+const cytoplasmaParticlesColor = 'rgba(20, 60, 60, 0.3)'
 const cellBarrierOuterColor = 'rgba(10, 150, 0, 0.5)'
 const cellBarrierInnerColor = 'rgba(150, 200, 100, 0.6)'
 const cellInnerColorLight = 'rgba(100, 255, 50, 0.1)'
 const cellInnerColorDark = 'rgba(100, 150, 50, 0.5)'
 const nucleusColor = 'rgba(20, 60, 50, 0.7)'
 const shapeRecoveryMultiplier = 0.01
-const cytoplasmaMaxParticlesSize = 3
-const cytoplasmaParticlesColor = 'rgba(20, 60, 60, 0.3)'
-const bubblesAmount = 160
-const diatomsAmount = 4
-const debugMode = false
-let cnv, ctx, animationStart, cell, background, destination, backgroundDots, diatoms
+const breathInterval = 5000
+const cellDetailsLevel = 2
+
+//END OF CONFIGURABLE CONSTANTS
+
+const mouse = {x: 0, y: 0}
+let cnv, ctx, animationStart, cell, backgroundTexture, destination, backgroundDots, diatoms
 
 window.addEventListener('DOMContentLoaded', init)
 console.log('...loading')
@@ -23,15 +33,24 @@ function init() {
     console.log('...initialization')
     destination = new DestinationPointer(500, 300)
     cnv = document.getElementById('cnv')
-    backgroundDots = new Array(bubblesAmount).fill(null).map(
-        () => new BackgroundDot(Math.random() * cnv.width, Math.random() * cnv.height, Math.random() * 10)
-    )
-    diatoms = new Array(diatomsAmount).fill(null).map(
-        () => new Diatom(Math.random() * cnv.width, Math.random() * cnv.height, Math.random() * 30 + 20)
-    )
-    background = document.getElementById('bg')
+    backgroundTexture = document.getElementById('bg')
     cytoplasmaTexture = document.getElementById('cytoplasma')
     diatomTexture = document.getElementById('diatom')
+
+    backgroundDots = [...Array(bubblesAmount)].map(() => {
+        const x = randomNumber(0, cnv.width)
+        const y = randomNumber(0, cnv.height)
+        const size = randomNumber(bubbleMinSize, bubbleMaxSize)
+        return new BackgroundDot(x, y, size)
+    })
+
+    diatoms = [...Array(diatomsAmount)].map(() => {
+        const x = randomNumber(0, cnv.width)
+        const y = randomNumber(0, cnv.height)
+        const size = randomNumber(diatomMinSize, diatomMaxSize)
+        return new Diatom(x, y, size)
+    })
+
     cnv.addEventListener('mousemove', event => {
         mouse.x = event.clientX
         mouse.y = event.clientY
@@ -54,7 +73,7 @@ function init() {
 function renderFrame(timestamp) {
     //ctx.clearRect(0, 0, cnv.width, cnv.height)
     
-    ctx.fillStyle = ctx.createPattern(background,"repeat")
+    ctx.fillStyle = ctx.createPattern(backgroundTexture,"repeat")
     ctx.fillRect(0, 0, cnv.width, cnv.height)
     backgroundDots.forEach(dot => dot.render())
     diatoms.forEach(diatom => diatom.render())
@@ -211,7 +230,7 @@ class Cell {
 
 
         this.plotPathOfCellBarrier()
-        ctx.strokeStyle = ctx.createPattern(background,"repeat")
+        ctx.strokeStyle = ctx.createPattern(backgroundTexture,"repeat")
         ctx.lineWidth = 2
         ctx.stroke()
 
@@ -584,4 +603,12 @@ class Diatom {
         ctx.setTransform(1, 0, 0, 1, 0, 0)
         ctx.globalAlpha = 1
     }
+}
+
+function createArrayFilledWithNulls(length) {
+    return new Array(bubblesAmount).fill(null)
+}
+
+function randomNumber(min, max) {
+    return Math.random() * (max - min) + min
 }
