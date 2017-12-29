@@ -1,0 +1,17 @@
+body {
+    margin: 0px auto;
+    overflow: hidden;
+    flex-direction: row;
+    align-content: center;
+    justify-content: space-around;
+}
+
+cnv {
+    margin: 0px auto;
+    width: 600px;
+    height: 600px;
+    align-self: center;
+    flex: none;
+    flex-grow: 1;
+    flex-shrink: 0;
+}
