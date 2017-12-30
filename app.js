@@ -541,7 +541,7 @@ class Bubble {
         ctx.fillStyle = specularGradient
         plotCirclePath(this.x, this.y, this.size)
         ctx.globalAlpha = visibility
-        ctx.globalCompositeOperation = 'xor'
+        ctx.globalCompositeOperation = 'source-over'
         ctx.fill()
         ctx.globalCompositeOperation = 'source-over'
         ctx.globalAlpha = '1'
