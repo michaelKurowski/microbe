@@ -1,31 +1,43 @@
 //Graphics settings
-const renderingInterval = 1000 / 60
+const renderingInterval = 1000 / 60 //60fps
 const debugMode = false
+const destinationPointerSize = 20
+const destinationPointerAnimationSpeed = 0.012
 
 //Environment objects
 const bubblesAmount = 160
 const bubbleMinSize = 4
 const bubbleMaxSize = 10
+
 const diatomsAmount = 4
-const diatomMinSize = 10
-const diatomMaxSize = 50
+const diatomMinSize = 40
+const diatomMaxSize = 80
 
 //Cell
-const cytoplasmaMaxParticlesSize = 3
-const cellParticlesAmount = 300
+const cellParticlesAmount = 160
 const cellParticlesSpreadnessRadius = 1.1
 const cytoplasmaParticlesColor = 'rgba(20, 60, 60, 0.3)'
+const cellParticleMaxSize = 3
+const cellParticleMinSize = 1
+const cellParticleColorFormula = () => `rgba(${Math.round(randomNumber(0, 100))}, 100, 100, 0.3)`
+
+
 const cellBarrierOuterColor = 'rgba(10, 150, 0, 0.5)'
 const cellBarrierInnerColor = 'rgba(150, 200, 100, 0.6)'
+
 const cellInnerColorLight = 'rgba(100, 255, 50, 0.1)'
 const cellInnerColorDark = 'rgba(100, 150, 50, 0.5)'
+
 const nucleusColor = 'rgba(20, 60, 50, 0.7)'
+
 const shapeRecoveryMultiplier = 0.01
 const breathInterval = 5000
 const cellDetailsLevel = 2
 const cellAnimationSpeed = 0.01
-const cellControllablessMultiplier = 0.3
+const cellControllabilityMultiplier = 0.3
 const cellBrakingSpeed = 0.005
+const cellSpeed = 0.05
+
 const cellHairColor = 'rgba(20, 50, 0, 0.35)'
 const cellHairLength = 12
 const cellHairThickness = 1
@@ -35,14 +47,15 @@ const cellHairSpreadness = 4
 //END OF CONFIGURABLE CONSTANTS
 
 const mouse = {x: 0, y: 0}
-let cnv, ctx, animationStart, cell, backgroundTexture, destination, backgroundDots, diatoms
+let cnv, ctx, animationStart, cell, backgroundTexture, destination, bubbles, diatoms
 
 window.addEventListener('DOMContentLoaded', init)
 console.log('...loading')
 function init() {
     console.log('...initialization')
-    destination = new DestinationPointer(500, 300)
+    
     cnv = document.getElementById('cnv')
+
     backgroundTexture = document.getElementById('bg')
     cytoplasmaTexture = document.getElementById('cytoplasma')
     diatomTexture = document.getElementById('diatom')
@@ -64,11 +77,13 @@ function init() {
         ]
     )
 
-    backgroundDots = [...Array(bubblesAmount)].map(() => {
+    destination = new DestinationPointer(cnv.width / 1.2, cnv.height / 2)
+
+    bubbles = [...Array(bubblesAmount)].map(() => {
         const x = randomNumber(0, cnv.width)
         const y = randomNumber(0, cnv.height)
         const size = randomNumber(bubbleMinSize, bubbleMaxSize)
-        return new BackgroundDot(x, y, size)
+        return new Bubble(x, y, size)
     })
 
     diatoms = [...Array(diatomsAmount)].map(() => {
@@ -78,18 +93,15 @@ function init() {
         return new Diatom(x, y, size)
     })
 
-    cnv.addEventListener('mousemove', event => {
-        mouse.x = event.clientX
-        mouse.y = event.clientY
-    })
-
     cnv.addEventListener('mousedown', event => {
-        destination.x = event.clientX
-        destination.y = event.clientY
+        debugger
+        destination.x = event.pageX - event.target.offsetLeft
+        destination.y = event.pageY - event.target.offsetTop
+        destination.timer = 0
     })
 
     ctx = cnv.getContext('2d')
-    cell = new Cell(300, 300, 100)
+    cell = new Cell(cnv.width / 2, cnv.height / 2, 100)
 
     console.log('...done')
 
@@ -108,7 +120,7 @@ function step(timestamp) {
 
 function render() {
     drawBackground()
-    backgroundDots.forEach(dot => dot.render())
+    bubbles.forEach(dot => dot.render())
     diatoms.forEach(diatom => diatom.render())
     destination.render()
     cell.render()
@@ -117,7 +129,7 @@ function render() {
 
 function tick() {
     destination.tick()
-    backgroundDots.forEach(dot => dot.propagate())
+    bubbles.forEach(dot => dot.propagate())
     diatoms.forEach(diatom => diatom.propagate())
     cell.propagate()
 }
@@ -139,6 +151,13 @@ class Cell {
     }
 
     propagate() {
+        this.particles.forEach(particle => {
+            particle.parentX = this.x
+            particle.parentY = this.y  
+            particle.centerOffsetX = this.cellCenterOffset[0]
+            particle.centerOffsetY = this.cellCenterOffset[1]
+        })
+
         this.cellWallNodes.forEach(curve => {
             curve.parentX = this.x
             curve.parentY = this.y
@@ -146,8 +165,8 @@ class Cell {
         })
         this.updateCellCenterOffset()
 
-        this.x += this.cellCenterOffset[0] / 20
-        this.y += this.cellCenterOffset[1] / 20
+        this.x += this.cellCenterOffset[0] * cellSpeed
+        this.y += this.cellCenterOffset[1] * cellSpeed
 
         if (this.x < 0) this.x = 0
         if (this.y < 0) this.y = 0
@@ -182,7 +201,6 @@ class Cell {
     createCellWall() {
         let dots = 4 * cellDetailsLevel
         this.cellWallNodes = [...Array(dots)].map((curve, index) => {
-            const fullCircleAngle = 2 * Math.PI
             const tiltFromPreviousNode = calculateNodeTilt(index, dots)
             const x = this.radius * Math.cos(tiltFromPreviousNode)
             const y = this.radius * Math.sin(tiltFromPreviousNode)
@@ -218,6 +236,14 @@ class Cell {
         }
     }
 
+    render() {
+        this.renderHair()
+        this.renderCytoplasma()
+        this.renderWall()
+        this.renderNucleus()
+        this.renderParticles()
+    }
+
     renderHair() {
         this.plotPathOfCellBarrier()
         ctx.lineDashOffset = 2;
@@ -233,13 +259,13 @@ class Cell {
         this.plotPathOfCellBarrier()
         ctx.fillStyle = ctx.createPattern(cytoplasmaTexture,"repeat")
         ctx.translate(cytoplasmaTexture.width / 2, cytoplasmaTexture.height / 2)
-        ctx.globalAlpha = '0.6'
+        ctx.globalAlpha = 0.6
         ctx.filter = 'blur(3px)'
         ctx.scale( 1 + this.cellCenterOffset[0] / 50, 1 + this.cellCenterOffset[1] / 50)
         ctx.globalCompositeOperation = 'multiply'
         ctx.fill()
         ctx.setTransform(1, 0, 0, 1, 0, 0)
-        ctx.globalAlpha = '1'
+        ctx.globalAlpha = 1
         ctx.filter = 'none'
         ctx.globalCompositeOperation = 'source-over'
         this.plotPathOfCellBarrier()
@@ -262,68 +288,29 @@ class Cell {
         ctx.stroke()
     }
 
-    render() {
-        this.renderHair()
-        this.renderCytoplasma()
-        this.renderWall()
-        this.renderNucleus()
-        this.renderParticles()
-    }
-
     renderNucleus() {
-        ctx.beginPath()
         ctx.fillStyle = nucleusColor
         const centerOfCell = [this.cellCenterOffset[0] + this.x, this.cellCenterOffset[1] + this.y]
         ctx.filter = 'blur(3px)'
-        ctx.arc(centerOfCell[0], centerOfCell[1], this.radius / 7 , 0, 2 * Math.PI)
-        ctx.closePath()
+        plotCirclePath(centerOfCell[0], centerOfCell[1], this.radius / 7)
         ctx.fill()
         ctx.filter = 'none'
     }
-
+    //TODO refactor
     renderParticles() {
         ctx.fillStyle = cytoplasmaParticlesColor
         const centerOffset = [...this.cellCenterOffset]
-        this.particles.forEach(particle => {
-            ctx.beginPath()
-            const leeway = (cytoplasmaMaxParticlesSize / particle.size) * 2
-            const absolutePositionX = this.x + (centerOffset[0] + particle.x) * particle.speed + centerOffset[0] * leeway * particle.speedX
-            const absolutePositionY = this.y + (centerOffset[1] + particle.y) * particle.speed + centerOffset[1] * leeway * particle.speedY
-            ctx.arc(absolutePositionX, absolutePositionY, particle.size , 0, 2 * Math.PI)
-            ctx.closePath()
-            if (particle.size + 1 >= cytoplasmaMaxParticlesSize) ctx.globalAlpha = 0.3
-            ctx.fill()
-            ctx.globalAlpha = 1
-        })
+        this.particles.forEach(particle => particle.render(centerOffset))
     }
-
-    /*
-
-    renderSpeculars() {
-        const centerOffset = [...this.cellCenterOffset]
-        const specularGradient = ctx.createRadialGradient(this.x, this.y - 100, 60, this.x, this.y, 50)
-        specularGradient.addColorStop(0, 'lime')
-        specularGradient.addColorStop(1, 'transparent')
-        ctx.beginPath()
-        ctx.arc(this.x, this.y - this.radius / 2, 20, 0, 2* Math.PI)
-        ctx.closePath()
-        ctx.fillStyle = specularGradient
-        ctx.globalCompositeOperation = 'xor'
-        ctx.fill()
-        ctx.beginPath()
-        ctx.arc(this.x + this.radius / 2.5 + centerOffset[0] * 2, this.y - 30 + centerOffset[1] * 2, 10, 0, 2* Math.PI)
-        ctx.closePath()
-        ctx.fill()
-        ctx.globalCompositeOperation = 'source-over'
-    }
-
-    */
 
     plotPathOfCellBarrier() {
         ctx.beginPath()
+
+        const lastNode = this.cellWallNodes[this.cellWallNodes.length - 1]
+
         ctx.moveTo(
-            this.cellWallNodes[this.cellWallNodes.length - 1].x + this.x,
-            this.cellWallNodes[this.cellWallNodes.length - 1].y + this.y
+            lastNode.x + this.x,
+            lastNode.y + this.y
         )
 
         this.cellWallNodes.forEach((curve, index, list) => {
@@ -345,7 +332,7 @@ class Cell {
         ctx.closePath()
     }
 
-    renderDebugLines() {
+    renderDebugLines() { //visible only in debug mode
         ctx.strokeStyle = 'pink'
         this.cellWallNodes.forEach((curve, index, list) => {
             const previousCurve = list[index - 1] || list[list.length - 1]
@@ -365,8 +352,6 @@ class Cell {
             ctx.closePath()
             ctx.stroke()
         })
-
-
 
         ctx.strokeStyle = 'red'
         this.cellWallNodes.forEach((curve, index, list) => {
@@ -388,9 +373,6 @@ class Cell {
             ctx.closePath()
             ctx.stroke()
         })
-
-        ctx.strokeStyle = 'black'
-
         ctx.strokeStyle = 'blue'
         ctx.beginPath()
         ctx.moveTo(this.x, this.y)
@@ -408,33 +390,31 @@ class Cell {
             ctx.stroke()
         })
     }
-
-    applyForce() {
-
-    }
-
-    applyBarrierForceTo(target, barrier) {
-        switch (target) {
-            case 'cp1':
-
-        }
-    }
 }
 
-class Ribbon {
-    constructor(x, y, length) {
+class Particle {
+    constructor(x, y) {
         this.x = x
         this.y = y
-        this.nodes = createNodes
-    }
-
-    createNodes(length) {
-        const emptyArray = new Array(length)
-        //return emptyArray.full(null).map(() => new )
+        this.size = randomNumber(cellParticleMinSize, cellParticleMaxSize)
+        this.distanceFromCellCenter = Math.random()
+        this.speedMultiplierX = Math.random()
+        this.speedMultiplierY = Math.random()
+        this.color = cellParticleColorFormula()
+        this.parentX = 0
+        this.parentY = 0
+        this.centerOffsetX = 0
+        this.centerOffsetY = 0
     }
 
     render() {
-
+        const leeway = (cellParticleMaxSize / this.size) * 2
+        const absolutePositionX = this.parentX + (this.centerOffsetX + this.x) * this.distanceFromCellCenter + this.centerOffsetX * leeway * this.speedMultiplierX
+        const absolutePositionY = this.parentY + (this.centerOffsetY + this.y) * this.distanceFromCellCenter + this.centerOffsetY * leeway * this.speedMultiplierY
+        plotCirclePath(absolutePositionX, absolutePositionY, this.size)
+        if (this.size + 1 >= cellParticleMaxSize) ctx.globalAlpha = 0.3
+        ctx.fill()
+        ctx.globalAlpha = 1
     }
 }
 
@@ -469,9 +449,9 @@ class CellWallNode {
             const preferredDirectionX = isDestinationOnRight > 0 ? 1 : -1
             const preferredDirectionY = isDestinationAbove > 0 ? 1 : -1
 
-            this.changeDirectionX = Math.random() > cellControllablessMultiplier ?
+            this.changeDirectionX = Math.random() > cellControllabilityMultiplier ?
                 preferredDirectionX : -preferredDirectionX
-            this.changeDirectionY = Math.random() > cellControllablessMultiplier ? 
+            this.changeDirectionY = Math.random() > cellControllabilityMultiplier ? 
                 preferredDirectionY : -preferredDirectionY
 
             this.timer = 0
@@ -485,19 +465,6 @@ class CellWallNode {
         this.initialShapeRecoveryStep()
     }
 }
-
-class Particle {
-    constructor(x, y) {
-        this.x = x
-        this.y = y
-        this.size = Math.random() * cytoplasmaMaxParticlesSize
-        this.speed = Math.random()
-        this.speedX = Math.random()
-        this.speedY = Math.random()
-        this.color = `rgba(${Math.round(Math.random() * 100)}, 100, 100, 0.3)`
-    }
-}
-
 class DestinationPointer {
     constructor(x, y) {
         this.x = x
@@ -506,40 +473,26 @@ class DestinationPointer {
     }
 
     render() {
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)'
-        ctx.beginPath()
-        const controllerValue = Math.abs((this.timer % 1)-0.5)
-        const outerCircleSize = easeInOutCubic(controllerValue) * 15 + 5
-        ctx.arc(this.x - 10, this.y - 10, outerCircleSize, 0, 2 * Math.PI)
-        ctx.closePath()
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'
+        ctx.fillStyle = `rgba(255, 255, 255, 0.8)`
+        const animationFrame = Math.abs((this.timer % 1) - 0.5)
+        const outerCircleSize = easeInOutCubic(animationFrame) * (destinationPointerSize - 5) + 5
+        plotCirclePath(this.x, this.y, outerCircleSize)
         ctx.stroke()
 
-        ctx.beginPath()
-        const innerCircleSize = easeInOutCubic(controllerValue) * 6 + 2
-        ctx.arc(this.x - 10, this.y - 10, innerCircleSize, 0, 2 * Math.PI)
-        ctx.closePath()
+        const innerCircleSize = destinationPointerSize / 6
+        plotCirclePath(this.x, this.y, innerCircleSize)
         ctx.fill()
         ctx.textAlign = 'center'
-        ctx.fillText('Come here', this.x -10, this.y - 30)
+        ctx.fillText('Come here', this.x, this.y - 20)
     }
 
     tick() {
-        this.timer += 0.006
+        if (this.timer < 0.5) this.timer += destinationPointerAnimationSpeed
     }
 }
 
-function calculateDistance(x1, y1, x2, y2) {
-    const xDistance = x1 - x2
-    const yDistance = y1 - y2
-    return Math.abs(Math.sqrt(xDistance*xDistance + yDistance*yDistance))
-}
-
-function easeInOutCubic(t) {
-    return t<.5 ? 16*t*t*t*t*t : 1+16*(--t)*t*t*t*t
-}
-
-class BackgroundDot {
+class Bubble {
     constructor(x,y, size) {
         this.x = x
         this.y = y
@@ -554,8 +507,8 @@ class BackgroundDot {
         this.x += this.velocityX
         this.y += this.velocityY
 
-        this.velocityX += (Math.random() - 0.5) / 90
-        this.velocityY += (Math.random() - 0.5) / 90
+        this.velocityX += randomNumber(-0.005, 0.005)
+        this.velocityY += randomNumber(-0.005, 0.005)
 
         if (cnv.width < this.x) {
             this.x = cnv.width
@@ -576,20 +529,18 @@ class BackgroundDot {
     }
 
     render() {
-        //ctx.fillStyle = 'rgba(255, 255, 255, 0.03)'
+        const controllerValue = Math.abs((this.timer % 1)-0.5)
+        const alpha = easeInOutCubic(controllerValue) - 0.2
+        const visibility = alpha > 0 ? alpha : 0
+
+        if (visibility === 0) return
+
         const specularGradient = ctx.createRadialGradient(this.x, this.y + this.size / 10, this.size, this.x, this.y, this.size / 1.3)
         specularGradient.addColorStop(0, 'white')
         specularGradient.addColorStop(1, 'transparent')
-        
         ctx.fillStyle = specularGradient
-
-        const controllerValue = Math.abs((this.timer % 1)-0.5)
-        const alpha = easeInOutCubic(controllerValue) - 0.2
-        
-        ctx.beginPath()
-        ctx.arc(this.x, this.y, this.size, 0, 2 * Math.PI)
-        ctx.closePath()
-        ctx.globalAlpha = alpha > 0 ? alpha : 0
+        plotCirclePath(this.x, this.y, this.size)
+        ctx.globalAlpha = visibility
         ctx.globalCompositeOperation = 'xor'
         ctx.fill()
         ctx.globalCompositeOperation = 'source-over'
@@ -611,28 +562,31 @@ class Diatom {
         this.rotation += 0.3 / this.size
         this.x += this.velocityX
         this.y += this.velocityY
-
-        this.velocityX += (Math.random() - 0.5) / 50
-        this.velocityY += (Math.random() - 0.5) / 50
+                
+        this.velocityX += randomNumber(-0.01, 0.01)
+        this.velocityY += randomNumber(-0.01, 0.01)
 
         if (Math.abs(this.velocityX) > 0.1) this.velocityX /= 1.5
         if (Math.abs(this.velocityY) > 0.1) this.velocityY /= 1.5
 
         if (cnv.width < this.x) {
             this.x = cnv.width
-            this.velocityX *= -1
+            this.velocityX = -this.velocityX
         }
+
         if (cnv.height < this.y) {
             this.y = cnv.height
-            this.velocityY *= -1
+            this.velocityY = -this.velocityY
         }
+
         if (0 > this.x) {
             this.x = 0
-            this.velocityX *= -1
+            this.velocityX = -this.velocityX
         }
+
         if (0 > this.y) {
             this.y = 0
-            this.velocityY *= -1
+            this.velocityY = -this.velocityY
         }
     }
 
@@ -659,4 +613,20 @@ function createArrayFilledWithNulls(length) {
 
 function randomNumber(min, max) {
     return Math.random() * (max - min) + min
+}
+
+function calculateDistance(x1, y1, x2, y2) {
+    const xDistance = x1 - x2
+    const yDistance = y1 - y2
+    return Math.abs(Math.sqrt(xDistance * xDistance + yDistance * yDistance))
+}
+
+function easeInOutCubic(t) {
+    return t < 0.5 ? 16 * (t ** 5) : 1 + 16 * (--t) * (t ** 4)
+}
+
+function plotCirclePath(x, y, size) {
+    ctx.beginPath()
+    ctx.arc(x, y, size , 0, 2 * Math.PI)
+    ctx.closePath()
 }

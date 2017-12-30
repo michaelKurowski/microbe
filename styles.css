@@ -1,19 +1,14 @@
 body {
     margin: 0px auto;
     overflow: hidden;
-    flex-direction: row;
-    align-content: center;
-    justify-content: space-around;
+    background: rgb(50, 50, 50);
+      display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
-cnv {
-    margin: 0px auto;
-    width: 600px;
-    height: 600px;
-    align-self: center;
-    flex: none;
-    flex-grow: 1;
-    flex-shrink: 0;
+#cnv {
+
 }
 
 #loading-alert {
