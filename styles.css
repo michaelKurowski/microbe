@@ -15,3 +15,9 @@ cnv {
     flex-grow: 1;
     flex-shrink: 0;
 }
+
+#loading-alert {
+    position: absolute;
+    top: 0;
+    font-size: 50px;
+}

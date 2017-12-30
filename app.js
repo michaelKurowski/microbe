@@ -21,6 +21,7 @@ const nucleusColor = 'rgba(20, 60, 50, 0.7)'
 const shapeRecoveryMultiplier = 0.01
 const breathInterval = 5000
 const cellDetailsLevel = 2
+const cellAnimationSpeed = 0.01
 
 //END OF CONFIGURABLE CONSTANTS
 
@@ -36,6 +37,23 @@ function init() {
     backgroundTexture = document.getElementById('bg')
     cytoplasmaTexture = document.getElementById('cytoplasma')
     diatomTexture = document.getElementById('diatom')
+
+    const texturesLoading = Promise.all(
+        [
+            new Promise((resolve, reject) => {
+                backgroundTexture.addEventListener('load', () => resolve())
+                backgroundTexture.addEventListener('error', err => reject(err))
+            }),
+            new Promise((resolve, reject) => {
+                cytoplasmaTexture.addEventListener('load', () => resolve())
+                cytoplasmaTexture.addEventListener('error', err => reject(err))
+            }),
+            new Promise((resolve, reject) => {
+                diatomTexture.addEventListener('load', () => resolve())
+                diatomTexture.addEventListener('error', err => reject(err))
+            })
+        ]
+    )
 
     backgroundDots = [...Array(bubblesAmount)].map(() => {
         const x = randomNumber(0, cnv.width)
@@ -62,56 +80,37 @@ function init() {
     })
 
     ctx = cnv.getContext('2d')
-    ctx.lineJoin = 'round'
     cell = new Cell(300, 300, 100)
-    cell.createPoints()
-    cell.createParticles()
-    requestAnimationFrame(renderFrame)
+
     console.log('...done')
+
+    texturesLoading.then( () => {
+        document.getElementById('loading-alert').innerHTML = ''
+        requestAnimationFrame(step)
+    })
 }
 
-function renderFrame(timestamp) {
-    //ctx.clearRect(0, 0, cnv.width, cnv.height)
-    
-    ctx.fillStyle = ctx.createPattern(backgroundTexture,"repeat")
-    ctx.fillRect(0, 0, cnv.width, cnv.height)
+function step(timestamp) {
+    animationStart = animationStart || timestamp
+    tick()
+    if (animationStart + renderingInterval < timestamp) render()
+    requestAnimationFrame(step)
+}
+
+function render() {
+    drawBackground()
     backgroundDots.forEach(dot => dot.render())
     diatoms.forEach(diatom => diatom.render())
     destination.render()
-    animationStart = animationStart || timestamp
-    let progress = timestamp - animationStart
-    tick()
     cell.render()
-    
     if (debugMode) cell.renderDebugLines()
-    requestAnimationFrame(renderFrame)
 }
-
-
 
 function tick() {
     destination.tick()
     backgroundDots.forEach(dot => dot.propagate())
     diatoms.forEach(diatom => diatom.propagate())
-    for (const [index, curve] of cell.bezierPoints.entries()) {
-        if (curve.timer >= 1 || curve.timer <= 0) {
-            const preferredDirectionX = (destination.x - cell.x) > 0 ? 1 : -1
-            const preferredDirectionY = (destination.y - cell.y) > 0 ? 1 : -1
-            curve.changeDirectionX = Math.random() > 0.3 ? preferredDirectionX : -preferredDirectionX
-            curve.changeDirectionY = Math.random() > 0.3 ? preferredDirectionY : -preferredDirectionY
-            curve.timer = 0
-        }
-        curve.changeDirectionX *= 0.995
-        curve.changeDirectionY *= 0.995
-        curve.timer+= 0.01
-        
-        curve.x+= curve.changeDirectionX * easeInOutCubic(curve.timer) * 0.3
-        curve.y+= curve.changeDirectionY * easeInOutCubic(curve.timer) * 0.3
-        
-        curve.x -= (curve.x - cell.originalShape[index].x) * shapeRecoveryMultiplier
-        curve.y -= (curve.y - cell.originalShape[index].y) * shapeRecoveryMultiplier
-    }
-    cell.updatecellCenterOffset()
+    cell.propagate()
 }
 
 class Cell {
@@ -125,11 +124,33 @@ class Cell {
         this.originalShape = []
         this.particles = []
         this.cellCenterOffset = []
-        this.ribbons = []
+
+        this.createPoints()
+        this.createParticles()
     }
 
-    createRibbons() {
-
+    propagate() {
+        for (const [index, curve] of this.bezierPoints.entries()) {
+            if (curve.timer >= 1 || curve.timer <= 0) {
+                const isDestinationOnRight = destination.x - this.x
+                const isDestinationAbove = destination.y - this.y
+                const preferredDirectionX = isDestinationOnRight > 0 ? 1 : -1
+                const preferredDirectionY = isDestinationAbove > 0 ? 1 : -1
+                curve.changeDirectionX = Math.random() > 0.3 ? preferredDirectionX : -preferredDirectionX
+                curve.changeDirectionY = Math.random() > 0.3 ? preferredDirectionY : -preferredDirectionY
+                curve.timer = 0
+            }
+            curve.changeDirectionX *= 0.995
+            curve.changeDirectionY *= 0.995
+            curve.timer+= cellAnimationSpeed
+            
+            curve.x+= curve.changeDirectionX * easeInOutCubic(curve.timer) * 0.3
+            curve.y+= curve.changeDirectionY * easeInOutCubic(curve.timer) * 0.3
+            
+            curve.x -= (curve.x - this.originalShape[index].x) * shapeRecoveryMultiplier
+            curve.y -= (curve.y - this.originalShape[index].y) * shapeRecoveryMultiplier
+        }
+        this.updatecellCenterOffset()
     }
 
     createParticles() {
@@ -603,6 +624,11 @@ class Diatom {
         ctx.setTransform(1, 0, 0, 1, 0, 0)
         ctx.globalAlpha = 1
     }
+}
+
+function drawBackground() {
+    ctx.fillStyle = ctx.createPattern(backgroundTexture, 'repeat')
+    ctx.fillRect(0, 0, cnv.width, cnv.height)
 }
 
 function createArrayFilledWithNulls(length) {
