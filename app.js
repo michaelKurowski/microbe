@@ -12,6 +12,8 @@ const diatomMaxSize = 50
 
 //Cell
 const cytoplasmaMaxParticlesSize = 3
+const cellParticlesAmount = 300
+const cellParticlesSpreadnessRadius = 1.1
 const cytoplasmaParticlesColor = 'rgba(20, 60, 60, 0.3)'
 const cellBarrierOuterColor = 'rgba(10, 150, 0, 0.5)'
 const cellBarrierInnerColor = 'rgba(150, 200, 100, 0.6)'
@@ -24,6 +26,11 @@ const cellDetailsLevel = 2
 const cellAnimationSpeed = 0.01
 const cellControllablessMultiplier = 0.3
 const cellBrakingSpeed = 0.005
+const cellHairColor = 'rgba(20, 50, 0, 0.35)'
+const cellHairLength = 12
+const cellHairThickness = 1
+const cellHairSpreadness = 4
+
 
 //END OF CONFIGURABLE CONSTANTS
 
@@ -122,92 +129,107 @@ class Cell {
         this.velocityX = 300
         this.velocityY = 300
         this.radius = radius
-        this.bezierPoints = []
+        this.cellWallNodes = []
         this.originalShape = []
         this.particles = []
         this.cellCenterOffset = []
 
-        this.createPoints()
+        this.createCellWall()
         this.createParticles()
     }
 
     propagate() {
-        this.bezierPoints.forEach(curve => {
+        this.cellWallNodes.forEach(curve => {
             curve.parentX = this.x
             curve.parentY = this.y
             curve.propagate()
         })
         this.updateCellCenterOffset()
+
+        this.x += this.cellCenterOffset[0] / 20
+        this.y += this.cellCenterOffset[1] / 20
+
+        if (this.x < 0) this.x = 0
+        if (this.y < 0) this.y = 0
+        if (this.x > cnv.width) this.x = cnv.width
+        if (this.y > cnv.height) this.y = cnv.height
     }
  
     createParticles() {
-        let dots = 150 * cellDetailsLevel
-        const emptyList = new Array(dots)
-        const listOfDummyParticlesCurves = emptyList.fill(null)
-        const maxOffsetFromCenter = this.radius * 1.1
-
-        this.particles = listOfDummyParticlesCurves.map(() => {
-            const x = (Math.random() * maxOffsetFromCenter) - maxOffsetFromCenter / 2 
-            const y = (Math.random() * maxOffsetFromCenter) - maxOffsetFromCenter / 2
+        const maxOffsetFromCenter = this.radius * cellParticlesSpreadnessRadius
+        this.particles = [...Array(cellParticlesAmount)].map(() => {
+            const x = randomNumber(-maxOffsetFromCenter / 2, maxOffsetFromCenter / 2)
+            const y = randomNumber(-maxOffsetFromCenter / 2, maxOffsetFromCenter / 2)
             return new Particle(x, y)
         })
     }
 
     updateCellCenterOffset() {
-        const averageVector = this.bezierPoints.reduce((accumulator, value) => {
+        const vectorsSum = this.cellWallNodes.reduce((accumulator, value) => {
             const x = accumulator[0] + value.x
             const y = accumulator[1] + value.y
             return [x, y]
         }, [0, 0])
-        averageVector[0] /= this.bezierPoints.length
-        averageVector[1] /= this.bezierPoints.length
+
+        const averageVector = [
+            vectorsSum[0] / this.cellWallNodes.length,
+            vectorsSum[1] / this.cellWallNodes.length
+        ]
 
         this.cellCenterOffset = averageVector
-        return this.cellCenterOffset
     }
 
-    createPoints() {
+    createCellWall() {
         let dots = 4 * cellDetailsLevel
-        const emptyList = new Array(dots)
-        const listOfDummyBezierCurves = emptyList.fill(null)
-        this.bezierPoints = listOfDummyBezierCurves.map(
-            (curve, index) => {
-                const fullCircleAngle = 2 * Math.PI
-                const angle = index ? (index / (dots)) * fullCircleAngle : 0
-                const x = this.radius * Math.cos(angle)
-                const y = this.radius * Math.sin(angle)
-                const controlPointsStep = (4/3) * Math.tan(Math.PI / (dots * 2)) * this.radius
-                const isEven = !(index % 2)
+        this.cellWallNodes = [...Array(dots)].map((curve, index) => {
+            const fullCircleAngle = 2 * Math.PI
+            const tiltFromPreviousNode = calculateNodeTilt(index, dots)
+            const x = this.radius * Math.cos(tiltFromPreviousNode)
+            const y = this.radius * Math.sin(tiltFromPreviousNode)
+            const controlPointDistanceFromNode = 
+                calculateOptimalDistanceForBezierControlPoints(dots, this.radius)
 
-                const controlPoint1X = controlPointsStep * Math.cos(Math.PI * 0.25 + angle)
-                const controlPoint1Y = controlPointsStep * Math.sin(Math.PI * 0.25 + angle)
-                const controlPoint2X = controlPointsStep * Math.cos(Math.PI * 1.5 + angle)
-                const controlPoint2Y = controlPointsStep * Math.sin(Math.PI * 1.5 + angle)
+            const controlPoint1X = 
+                controlPointDistanceFromNode * Math.cos(Math.PI * 0.25 + tiltFromPreviousNode)
+            const controlPoint1Y = 
+                controlPointDistanceFromNode * Math.sin(Math.PI * 0.25 + tiltFromPreviousNode)
+            const controlPoint2X = 
+                controlPointDistanceFromNode * Math.cos(Math.PI * 1.5 + tiltFromPreviousNode)
+            const controlPoint2Y = 
+                controlPointDistanceFromNode * Math.sin(Math.PI * 1.5 + tiltFromPreviousNode)
 
-                return new CellBarrierNode(
-                    x,
-                    y,
-                    controlPoint1X,
-                    controlPoint1Y,
-                    controlPoint2X,
-                    controlPoint2Y
-                )
-            }
-        )
+            return new CellWallNode(
+                x,
+                y,
+                controlPoint1X,
+                controlPoint1Y,
+                controlPoint2X,
+                controlPoint2Y
+            )
+        })
+
+        function calculateOptimalDistanceForBezierControlPoints(amountOfNodes, radius) {
+            return (4/3) * Math.tan(Math.PI / (amountOfNodes * 2)) * radius
+        }
+
+        function calculateNodeTilt(nodeNumber, totalAmountOfNodes) {
+            const fullCircleAngle = 2 * Math.PI
+            return (nodeNumber / totalAmountOfNodes) * fullCircleAngle
+        }
     }
 
-    render() {
-
+    renderHair() {
         this.plotPathOfCellBarrier()
         ctx.lineDashOffset = 2;
-        ctx.setLineDash([1, 4])
-        ctx.strokeStyle = 'rgba(20, 50, 0, 0.35)'
-        ctx.lineWidth = 12
+        ctx.setLineDash([cellHairThickness, cellHairSpreadness])
+        ctx.strokeStyle = cellHairColor
+        ctx.lineWidth = cellHairLength
         ctx.stroke()
         ctx.lineDashOffset = 0;
         ctx.setLineDash([])
+    }
 
-
+    renderCytoplasma() {
         this.plotPathOfCellBarrier()
         ctx.fillStyle = ctx.createPattern(cytoplasmaTexture,"repeat")
         ctx.translate(cytoplasmaTexture.width / 2, cytoplasmaTexture.height / 2)
@@ -220,64 +242,43 @@ class Cell {
         ctx.globalAlpha = '1'
         ctx.filter = 'none'
         ctx.globalCompositeOperation = 'source-over'
-
-
         this.plotPathOfCellBarrier()
         const grd = ctx.createRadialGradient(this.x, this.y , this.radius / 1.7, this.x, this.y, this.radius * 1.2)
         grd.addColorStop(0, cellInnerColorLight)
         grd.addColorStop(1, cellInnerColorDark)
         ctx.fillStyle = grd
         ctx.fill()
+    }
 
+    renderWall() {
         this.plotPathOfCellBarrier()
         ctx.strokeStyle = cellBarrierOuterColor
         ctx.lineWidth = 4
         ctx.stroke()
-
-
+        
         this.plotPathOfCellBarrier()
         ctx.strokeStyle = ctx.createPattern(backgroundTexture,"repeat")
         ctx.lineWidth = 2
         ctx.stroke()
+    }
 
-
-
+    render() {
+        this.renderHair()
+        this.renderCytoplasma()
+        this.renderWall()
         this.renderNucleus()
-        const averageVector = [...this.cellCenterOffset]
-
         this.renderParticles()
-        //this.renderSpeculars()
-
-        this.x += averageVector[0] / 20
-        this.y += averageVector[1] / 20
-        if (this.x < 0) this.x = 0
-        if (this.y < 0) this.y = 0
-        if (this.x > cnv.width) this.x = cnv.width
-        if (this.y > cnv.height) this.y = cnv.height
-
-            
     }
 
     renderNucleus() {
         ctx.beginPath()
         ctx.fillStyle = nucleusColor
-        
-        const averageVector = [...this.cellCenterOffset]
-
-
-
-        averageVector[0] = this.x + averageVector[0]
-        averageVector[1] = this.y + averageVector[1]
-
-        
-
+        const centerOfCell = [this.cellCenterOffset[0] + this.x, this.cellCenterOffset[1] + this.y]
         ctx.filter = 'blur(3px)'
-        ctx.arc(averageVector[0], averageVector[1], this.radius / 7 , 0, 2 * Math.PI)
+        ctx.arc(centerOfCell[0], centerOfCell[1], this.radius / 7 , 0, 2 * Math.PI)
         ctx.closePath()
         ctx.fill()
         ctx.filter = 'none'
-
-        return averageVector
     }
 
     renderParticles() {
@@ -295,6 +296,8 @@ class Cell {
             ctx.globalAlpha = 1
         })
     }
+
+    /*
 
     renderSpeculars() {
         const centerOffset = [...this.cellCenterOffset]
@@ -314,14 +317,16 @@ class Cell {
         ctx.globalCompositeOperation = 'source-over'
     }
 
+    */
+
     plotPathOfCellBarrier() {
         ctx.beginPath()
         ctx.moveTo(
-            this.bezierPoints[this.bezierPoints.length - 1].x + this.x,
-            this.bezierPoints[this.bezierPoints.length - 1].y + this.y
+            this.cellWallNodes[this.cellWallNodes.length - 1].x + this.x,
+            this.cellWallNodes[this.cellWallNodes.length - 1].y + this.y
         )
 
-        this.bezierPoints.forEach((curve, index, list) => {
+        this.cellWallNodes.forEach((curve, index, list) => {
             const previousCurve = list[index - 1] || list[list.length - 1]
             const previousCurveLineEndpointX = previousCurve.x + this.x
             const previousCurveLineEndpointY = previousCurve.y + this.y
@@ -341,9 +346,8 @@ class Cell {
     }
 
     renderDebugLines() {
-
         ctx.strokeStyle = 'pink'
-        this.bezierPoints.forEach((curve, index, list) => {
+        this.cellWallNodes.forEach((curve, index, list) => {
             const previousCurve = list[index - 1] || list[list.length - 1]
             const previousCurveLineEndpointX = previousCurve.x + this.x
             const previousCurveLineEndpointY = previousCurve.y + this.y
@@ -365,7 +369,7 @@ class Cell {
 
 
         ctx.strokeStyle = 'red'
-        this.bezierPoints.forEach((curve, index, list) => {
+        this.cellWallNodes.forEach((curve, index, list) => {
 
             const previousCurve = list[index - 1] || list[list.length - 1]
             const previousCurveLineEndpointX = previousCurve.x + this.x
@@ -394,7 +398,7 @@ class Cell {
         ctx.closePath()
         ctx.stroke()
 
-        this.bezierPoints.forEach((curve, index) => {
+        this.cellWallNodes.forEach((curve, index) => {
             ctx.strokeStyle = 'lime'
             const initialPosition = this.originalShape[index]
             ctx.beginPath()
@@ -434,7 +438,7 @@ class Ribbon {
     }
 }
 
-class CellBarrierNode {
+class CellWallNode {
     constructor(x, y, controlPoint1X, controlPoint1Y, controlPoint2X, controlPoint2Y) {
         this.x = x
         this.y = y
