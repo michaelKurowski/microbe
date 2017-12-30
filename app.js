@@ -36,7 +36,7 @@ const cellDetailsLevel = 2
 const cellAnimationSpeed = 0.01
 const cellControllabilityMultiplier = 0.3
 const cellBrakingSpeed = 0.005
-const cellSpeed = 0.05
+const cellSpeed = 0.1
 
 const cellHairColor = 'rgba(20, 50, 0, 0.35)'
 const cellHairLength = 12
@@ -79,11 +79,11 @@ function init() {
 
     destination = new DestinationPointer(cnv.width / 1.2, cnv.height / 2)
 
-    bubbles = [...Array(bubblesAmount)].map(() => {
+    bubbles = [...Array(bubblesAmount)].map((value, index) => {
         const x = randomNumber(0, cnv.width)
         const y = randomNumber(0, cnv.height)
         const size = randomNumber(bubbleMinSize, bubbleMaxSize)
-        return new Bubble(x, y, size)
+        return new Bubble(x, y, size, index)
     })
 
     diatoms = [...Array(diatomsAmount)].map(() => {
@@ -94,7 +94,6 @@ function init() {
     })
 
     cnv.addEventListener('mousedown', event => {
-        debugger
         destination.x = event.pageX - event.target.offsetLeft
         destination.y = event.pageY - event.target.offsetTop
         destination.timer = 0
@@ -138,8 +137,6 @@ class Cell {
     constructor(x, y, radius) {
         this.x = x
         this.y = y
-        this.velocityX = 300
-        this.velocityY = 300
         this.radius = radius
         this.cellWallNodes = []
         this.originalShape = []
@@ -493,12 +490,13 @@ class DestinationPointer {
 }
 
 class Bubble {
-    constructor(x,y, size) {
+    constructor(x,y, size, index) {
         this.x = x
         this.y = y
         this.size = size
         this.velocityX = 0
         this.velocityY = 0
+        this.index = index
         this.timer = Math.random()
     }
 
@@ -538,7 +536,10 @@ class Bubble {
         const specularGradient = ctx.createRadialGradient(this.x, this.y + this.size / 10, this.size, this.x, this.y, this.size / 1.3)
         specularGradient.addColorStop(0, 'white')
         specularGradient.addColorStop(1, 'transparent')
+        cell.plotPathOfCellBarrier()
+        
         ctx.fillStyle = specularGradient
+        if (ctx.isPointInStroke(this.x, this.y)) bubbles[this.index] = new Bubble(1, 1, this.size)
         plotCirclePath(this.x, this.y, this.size)
         ctx.globalAlpha = visibility
         ctx.globalCompositeOperation = 'source-over'
@@ -556,16 +557,39 @@ class Diatom {
         this.velocityY = 0
         this.size = size
         this.rotation = 0
+        this.isBeingEaten = false
+    }
+
+    isInsideCell() {
+        cell.plotPathOfCellBarrier()
+        const radius = this.size / 2
+        return (
+            ctx.isPointInStroke(this.x, this.y)
+        )
     }
 
     propagate() {
-        this.rotation += 0.3 / this.size
+        if (!this.isBeingEaten && this.isInsideCell()) {
+            this.isBeingEaten = true
+        }
+        
+
+              
+        if (this.isBeingEaten) {
+            const isDestinationOnRight = cell.x - this.x
+            const isDestinationAbove = cell.y - this.y
+            const preferredDirectionX = isDestinationOnRight > 0 ? 1 : -1
+            const preferredDirectionY = isDestinationAbove > 0 ? 1 : -1
+            this.velocityX = cell.cellCenterOffset[0] * cellSpeed + preferredDirectionX / 10
+            this.velocityY = cell.cellCenterOffset[1] * cellSpeed + preferredDirectionY / 10
+        } else {
+            this.rotation += 0.3 / this.size
+            this.velocityX += randomNumber(-0.01, 0.01)
+            this.velocityY += randomNumber(-0.01, 0.01)
+
+        }
         this.x += this.velocityX
         this.y += this.velocityY
-                
-        this.velocityX += randomNumber(-0.01, 0.01)
-        this.velocityY += randomNumber(-0.01, 0.01)
-
         if (Math.abs(this.velocityX) > 0.1) this.velocityX /= 1.5
         if (Math.abs(this.velocityY) > 0.1) this.velocityY /= 1.5
 
@@ -592,11 +616,11 @@ class Diatom {
 
     render() {
         ctx.globalAlpha = 0.2
-        ctx.translate(this.x + this.size / 2, this.y + this.size / 2)
+        const radius = this.size / 2
+        ctx.translate(this.x, this.y)
         ctx.rotate(this.rotation)
-        ctx.translate(-this.x - this.size / 2, -this.y - this.size / 2)
-        ctx.drawImage(diatom, this.x, this.y, this.size, this.size)
-        
+        ctx.translate(-this.x, -this.y)
+        ctx.drawImage(diatom, this.x - radius, this.y - radius, this.size, this.size)
         ctx.setTransform(1, 0, 0, 1, 0, 0)
         ctx.globalAlpha = 1
     }
