@@ -22,6 +22,8 @@ const shapeRecoveryMultiplier = 0.01
 const breathInterval = 5000
 const cellDetailsLevel = 2
 const cellAnimationSpeed = 0.01
+const cellControllablessMultiplier = 0.3
+const cellBrakingSpeed = 0.005
 
 //END OF CONFIGURABLE CONSTANTS
 
@@ -130,29 +132,14 @@ class Cell {
     }
 
     propagate() {
-        for (const [index, curve] of this.bezierPoints.entries()) {
-            if (curve.timer >= 1 || curve.timer <= 0) {
-                const isDestinationOnRight = destination.x - this.x
-                const isDestinationAbove = destination.y - this.y
-                const preferredDirectionX = isDestinationOnRight > 0 ? 1 : -1
-                const preferredDirectionY = isDestinationAbove > 0 ? 1 : -1
-                curve.changeDirectionX = Math.random() > 0.3 ? preferredDirectionX : -preferredDirectionX
-                curve.changeDirectionY = Math.random() > 0.3 ? preferredDirectionY : -preferredDirectionY
-                curve.timer = 0
-            }
-            curve.changeDirectionX *= 0.995
-            curve.changeDirectionY *= 0.995
-            curve.timer+= cellAnimationSpeed
-            
-            curve.x+= curve.changeDirectionX * easeInOutCubic(curve.timer) * 0.3
-            curve.y+= curve.changeDirectionY * easeInOutCubic(curve.timer) * 0.3
-            
-            curve.x -= (curve.x - this.originalShape[index].x) * shapeRecoveryMultiplier
-            curve.y -= (curve.y - this.originalShape[index].y) * shapeRecoveryMultiplier
-        }
-        this.updatecellCenterOffset()
+        this.bezierPoints.forEach(curve => {
+            curve.parentX = this.x
+            curve.parentY = this.y
+            curve.propagate()
+        })
+        this.updateCellCenterOffset()
     }
-
+ 
     createParticles() {
         let dots = 150 * cellDetailsLevel
         const emptyList = new Array(dots)
@@ -166,7 +153,7 @@ class Cell {
         })
     }
 
-    updatecellCenterOffset() {
+    updateCellCenterOffset() {
         const averageVector = this.bezierPoints.reduce((accumulator, value) => {
             const x = accumulator[0] + value.x
             const y = accumulator[1] + value.y
@@ -207,8 +194,6 @@ class Cell {
                 )
             }
         )
-
-        this.originalShape = JSON.parse(JSON.stringify(this.bezierPoints))
     }
 
     render() {
@@ -461,6 +446,39 @@ class CellBarrierNode {
         this.changeDirectionY = Math.random() < 0.5 ? -1 : 1
         this.timer = 0.01
         this.timerDirection = 1
+
+        this.initialX = x
+        this.initialY = y
+        this.parentX = 0
+        this.parentY = 0
+    }
+
+    initialShapeRecoveryStep() {
+        this.x -= (this.x - this.initialX) * shapeRecoveryMultiplier
+        this.y -= (this.y - this.initialY) * shapeRecoveryMultiplier
+    }
+
+    propagate() {
+        if (this.timer >= 1 || this.timer <= 0) {
+            const isDestinationOnRight = destination.x - this.parentX
+            const isDestinationAbove = destination.y - this.parentY
+            const preferredDirectionX = isDestinationOnRight > 0 ? 1 : -1
+            const preferredDirectionY = isDestinationAbove > 0 ? 1 : -1
+
+            this.changeDirectionX = Math.random() > cellControllablessMultiplier ?
+                preferredDirectionX : -preferredDirectionX
+            this.changeDirectionY = Math.random() > cellControllablessMultiplier ? 
+                preferredDirectionY : -preferredDirectionY
+
+            this.timer = 0
+        }
+        this.changeDirectionX /= 1 + cellBrakingSpeed
+        this.changeDirectionY /= 1 + cellBrakingSpeed
+        this.timer+= cellAnimationSpeed
+        
+        this.x+= this.changeDirectionX * easeInOutCubic(this.timer) * 0.3
+        this.y+= this.changeDirectionY * easeInOutCubic(this.timer) * 0.3
+        this.initialShapeRecoveryStep()
     }
 }
 
